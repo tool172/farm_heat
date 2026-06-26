@@ -1,0 +1,199 @@
+<?php
+
+/**
+ * @file
+ * Farm Heat module.
+ *
+ * Provides heat/estrus observation tracking for farmOS livestock management:
+ *  - heat_observation log type with EDS scoring
+ *  - HeatCyclePredictor service for next-heat prediction and return detection
+ *  - Reproductive history tab on Animal asset pages
+ *  - Reproductive summary extra field on Animal asset canonical page
+ *  - Reproductive activity dashboard block via hook_farm_dashboard_panes()
+ *  - Auto-populates heat_days_since_last, heat_return_suspected, and
+ *    heat_breeding_log fields on heat_observation save via hook_entity_presave()
+ */
+
+declare(strict_types=1);
+
+use Drupal\Core\Entity\Display\EntityViewDisplayInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Url;
+
+// ======================================================================== //
+// BUNDLE FIELD HOOKS                                                        //
+// ======================================================================== //
+
+/**
+ * Implements hook_entity_extra_field_info().
+ *
+ * Adds a 'reproductive_summary' pseudo-field to the Animal asset display so
+ * it can be placed and toggled via Manage Display without code changes.
+ */
+function farm_heat_entity_extra_field_info(): array {
+  $extra = [];
+  $extra['asset']['animal']['display']['reproductive_summary'] = [
+    'label'       => t('Reproductive summary'),
+    'description' => t('Last heat, predicted next heat, and current breeding status. Links to full reproductive history tab.'),
+    'weight'      => 100,
+    'visible'     => TRUE,
+  ];
+  return $extra;
+}
+
+// ======================================================================== //
+// ENTITY HOOKS                                                              //
+// ======================================================================== //
+
+/**
+ * Implements hook_entity_presave().
+ *
+ * On heat_observation log save:
+ *  1. Calculates days since the previous heat for the first referenced animal.
+ *  2. Checks each referenced animal for return-to-estrus and sets the flag +
+ *     breeding log reference on the first match found.
+ */
+function farm_heat_entity_presave(EntityInterface $entity): void {
+  if ($entity->getEntityTypeId() !== 'log' || $entity->bundle() !== 'heat_observation') {
+    return;
+  }
+
+  $predictor   = \Drupal::service('farm_heat.heat_cycle_predictor');
+  $observed_ts = (int) $entity->get('timestamp')->value;
+
+  $days_set   = FALSE;
+  $return_set = FALSE;
+
+  foreach ($entity->get('asset') as $ref) {
+    $asset_id = (int) $ref->target_id;
+    if (!$asset_id) {
+      continue;
+    }
+
+    $asset = \Drupal::entityTypeManager()->getStorage('asset')->load($asset_id);
+    if (!$asset) {
+      continue;
+    }
+
+    $species = $predictor->resolveSpeciesFromAsset($asset);
+
+    // 1. Days since last heat — use the first animal that has a previous heat.
+    if (!$days_set && $entity->hasField('heat_days_since_last') && $entity->get('heat_days_since_last')->isEmpty()) {
+      $last_heat = $predictor->getLastHeat($asset_id, $observed_ts);
+      if ($last_heat) {
+        $last_ts = (int) $last_heat->get('timestamp')->value;
+        $entity->set('heat_days_since_last', (int) round(($observed_ts - $last_ts) / 86400));
+        $days_set = TRUE;
+      }
+    }
+
+    // 2. Return-to-estrus detection — first match wins.
+    if (!$return_set) {
+      $return = $predictor->checkReturnToEstrus($asset_id, $observed_ts, $species);
+      if ($return['suspected']) {
+        $entity->set('heat_return_suspected', TRUE);
+        if ($return['breeding_log'] && $entity->hasField('heat_breeding_log')) {
+          $entity->set('heat_breeding_log', $return['breeding_log']->id());
+        }
+        $return_set = TRUE;
+      }
+    }
+
+    if ($days_set && $return_set) {
+      break;
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_view().
+ *
+ * Renders the reproductive_summary extra field on Animal asset canonical pages.
+ * Only shown for female animals.
+ */
+function farm_heat_entity_view(array &$build, EntityInterface $entity, EntityViewDisplayInterface $display, string $view_mode): void {
+  if ($entity->getEntityTypeId() !== 'asset' || $entity->bundle() !== 'animal') {
+    return;
+  }
+
+  if (!$display->getComponent('reproductive_summary')) {
+    return;
+  }
+
+  // Only show for female animals.
+  if (!$entity->hasField('sex') || $entity->get('sex')->value !== 'F') {
+    return;
+  }
+
+  $predictor = \Drupal::service('farm_heat.heat_cycle_predictor');
+  $asset_id  = (int) $entity->id();
+  $species   = $predictor->resolveSpeciesFromAsset($entity);
+  $now       = \Drupal::time()->getRequestTime();
+  $df        = \Drupal::service('date.formatter');
+
+  $last_heat  = $predictor->getLastHeat($asset_id);
+  $prediction = $predictor->predictNextHeat($asset_id, $species);
+
+  $items = [];
+
+  if ($last_heat) {
+    $last_ts  = (int) $last_heat->get('timestamp')->value;
+    $days_ago = (int) round(($now - $last_ts) / 86400);
+    $items[]  = t('Last heat: @date (@days days ago)', [
+      '@date' => $df->format($last_ts, 'custom', 'M j Y'),
+      '@days' => $days_ago,
+    ]);
+  }
+  else {
+    $items[] = t('Last heat: not recorded');
+  }
+
+  if ($prediction) {
+    $predicted_label = $df->format($prediction['predicted_ts'], 'custom', 'M j Y');
+    if ($prediction['in_window']) {
+      $predicted_label .= ' — IN HEAT WINDOW';
+    }
+    elseif ($prediction['days_until'] > 0) {
+      $predicted_label .= ' (in ' . $prediction['days_until'] . ' days)';
+    }
+    else {
+      $predicted_label .= ' (' . abs($prediction['days_until']) . ' days overdue)';
+    }
+    $items[] = t('Next predicted heat: @label', ['@label' => $predicted_label]);
+  }
+
+  // Link to full reproductive history tab.
+  $items[] = [
+    '#type'  => 'link',
+    '#title' => t('View full reproductive history →'),
+    '#url'   => Url::fromRoute('farm_heat.animal_reproductive_tab', ['asset' => $entity->id()]),
+  ];
+
+  $build['reproductive_summary'] = [
+    '#theme'      => 'item_list',
+    '#title'      => t('Reproductive summary'),
+    '#items'      => $items,
+    '#attributes' => ['class' => ['farm-heat-reproductive-summary']],
+    '#weight'     => 100,
+  ];
+}
+
+// ======================================================================== //
+// DASHBOARD                                                                 //
+// ======================================================================== //
+
+/**
+ * Implements hook_farm_dashboard_panes().
+ *
+ * Adds the Reproductive Activity block to the farmOS dashboard.
+ */
+function farm_heat_farm_dashboard_panes(): array {
+  return [
+    'farm_heat_reproductive_activity' => [
+      'block'  => 'farm_heat_reproductive_activity',
+      'region' => 'second',
+      'weight' => 10,
+    ],
+  ];
+}

@@ -1,0 +1,12 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - farm_heat
+id: heat_observation
+label: 'Heat Observation'
+description: 'Record an observed estrus (heat) event for one or more animals.'
+name_pattern: 'Heat: [log:asset] [log:timestamp:date]'
+workflow: farm_log_workflow
+new_revision: true

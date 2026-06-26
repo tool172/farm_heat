@@ -1,0 +1,12 @@
+name: Farm Heat
+description: 'Heat/estrus observation tracking with EDS scoring, cycle prediction, return-to-estrus detection, and reproductive profile pages for farmOS livestock management.'
+type: module
+package: farmOS Contrib
+core_version_requirement: ^10 || ^11
+dependencies:
+  - farm:farm_animal
+  - farm:farm_entity
+  - farm:farm_quick
+  - farm:farm_ui_views
+  - farm_breeding:farm_breeding
+  - farm_animal_disposition:farm_animal_disposition

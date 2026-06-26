@@ -1,0 +1,11 @@
+{
+  "name": "drupal/farm_heat",
+  "description": "Heat/estrus observation tracking with EDS scoring, cycle prediction, return-to-estrus detection, and reproductive profile pages for farmOS livestock management.",
+  "type": "drupal-module",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "drupal/farm": "^4.0",
+    "drupal/farm_breeding": "^1.0",
+    "drupal/farm_animal_disposition": "^1.0"
+  }
+}

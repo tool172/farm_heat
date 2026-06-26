@@ -1,0 +1,21 @@
+farm_heat.animal_reproductive_tab:
+  path: '/asset/{asset}/reproductive'
+  defaults:
+    _controller: 'Drupal\farm_heat\Controller\AnimalReproductiveTabController::content'
+    _title: 'Reproductive history'
+  requirements:
+    _custom_access: 'Drupal\farm_heat\Controller\AnimalReproductiveTabController::access'
+    _module_dependencies: asset
+    asset: \d+
+  options:
+    parameters:
+      asset:
+        type: entity:asset
+
+farm_heat.heat_predicted:
+  path: '/heat/predicted'
+  defaults:
+    _controller: 'Drupal\farm_heat\Controller\HeatPredictedController::content'
+    _title: 'Animals predicted in heat'
+  requirements:
+    _permission: 'view any asset'

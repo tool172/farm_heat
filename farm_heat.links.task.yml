@@ -1,0 +1,5 @@
+farm_heat.animal_reproductive_tab:
+  title: 'Reproductive'
+  route_name: farm_heat.animal_reproductive_tab
+  base_route: entity.asset.canonical
+  weight: 10

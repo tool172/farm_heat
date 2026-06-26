@@ -1,0 +1,15 @@
+farm_heat.heat_observations:
+  title: 'Heat Observations'
+  description: 'View heat observation logs.'
+  route_name: view.farm_log.page_type
+  route_parameters:
+    log_type: heat_observation
+  parent: farm.logs
+  weight: 20
+
+farm_heat.heat_predicted:
+  title: 'Animals Predicted in Heat'
+  description: 'Animals predicted to be in their heat window within the next 7 days.'
+  route_name: farm_heat.heat_predicted
+  parent: farm.logs
+  weight: 21

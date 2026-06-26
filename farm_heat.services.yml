@@ -1,0 +1,8 @@
+services:
+  farm_heat.heat_cycle_predictor:
+    class: Drupal\farm_heat\Service\HeatCyclePredictor
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@farm_breeding.species_resolver'
+      - '@datetime.time'

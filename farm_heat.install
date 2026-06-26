@@ -1,0 +1,58 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * @file
+ * Install hooks for farm_heat.
+ *
+ * Registers the heat_observation log bundle fields via the plugin system so
+ * that fields defined in HeatObservation::buildFieldDefinitions() are created
+ * in the database on module install.
+ */
+
+/**
+ * Implements hook_modules_installed().
+ */
+function farm_heat_modules_installed(array $modules, bool $is_syncing): void {
+  if (!in_array('farm_heat', $modules, TRUE)) {
+    return;
+  }
+  $log_entity_type = \Drupal::entityTypeManager()->getDefinition('log');
+  \Drupal::service('entity.bundle_plugin_installer')
+    ->installBundles($log_entity_type, ['farm_heat']);
+}
+
+/**
+ * Implements hook_module_preuninstall().
+ *
+ * Ensures any field tables that may have been removed by uninstalling a
+ * dependent module are restored before entity_module_preuninstall() tries
+ * to drop them (which would fatal if they are missing).
+ */
+function farm_heat_module_preuninstall(string $module): void {
+  if ($module !== 'farm_heat') {
+    return;
+  }
+
+  // Restore any missing field storage tables before uninstallBundles() runs.
+  $schema   = \Drupal::database()->schema();
+  $log_type = \Drupal::entityTypeManager()->getDefinition('log');
+  $plugin   = \Drupal::service('plugin.manager.log_type')->createInstance('heat_observation');
+
+  foreach (array_keys($plugin->buildFieldDefinitions()) as $field_name) {
+    foreach (['log__' . $field_name, 'log_revision__' . $field_name] as $table) {
+      if (!$schema->tableExists($table)) {
+        \Drupal::logger('farm_heat')->warning('Recreating missing table @table before uninstall.', ['@table' => $table]);
+        try {
+          \Drupal::service('entity.bundle_plugin_installer')
+            ->installBundles($log_type, ['farm_heat']);
+          break 2;
+        }
+        catch (\Exception $e) {
+          // Best-effort — continue with uninstall even if recreation fails.
+        }
+      }
+    }
+  }
+}
