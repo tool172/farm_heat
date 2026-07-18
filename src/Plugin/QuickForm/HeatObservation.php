@@ -7,7 +7,6 @@ namespace Drupal\farm_heat\Plugin\QuickForm;
 use Drupal\Core\Datetime\DrupalDateTime;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\Render\Markup;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\Core\Url;
@@ -150,7 +149,7 @@ class HeatObservation extends QuickFormBase {
       'type'       => 'heat_observation',
       'name'       => $this->t('Heat observed (score @score): @animals', [
         '@score'   => $heat_score,
-        '@animals' => Markup::create($this->entityLabelsSummary(array_values($assets))),
+        '@animals' => $this->entityLabelsSummary(array_values($assets)),
       ]),
       'timestamp'  => $timestamp->getTimestamp(),
       'asset'      => $asset_ids,
